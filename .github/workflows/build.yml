@@ -1,0 +1,155 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    working-directory: android
+
+concurrency:
+  group: build-apk
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # 不用 android-actions/setup-android：它会跑 `sdkmanager tools`，
+      # 而 Google 已把 tools 包下线，导致 "Failed to find package 'tools'" 直接失败。
+      # ubuntu runner 自带 Android SDK，这里只把 cmdline-tools 加进 PATH 并补装需要的包。
+      - name: Set up Android SDK
+        run: |
+          set -e
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "SDK=$SDK"
+          SDKM="$(ls -d "$SDK"/cmdline-tools/*/bin 2>/dev/null | head -1)"
+          if [ -z "$SDKM" ]; then
+            echo "没找到 cmdline-tools，落回 PATH 里的 sdkmanager"
+          else
+            echo "$SDKM" >> "$GITHUB_PATH"
+            export PATH="$SDKM:$PATH"
+          fi
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          which sdkmanager || true
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      # 版本号自动递增：versionCode 用「1000 + 构建序号」，保证永远比手机里装的大，
+      # 这样系统才会走「覆盖安装」而不是拒绝安装。versionName 形如 1.2.37。
+      - name: Compute version
+        id: ver
+        run: |
+          VC=$((1000 + ${{ github.run_number }}))
+          VN="1.0.${{ github.run_number }}"
+          echo "VC=$VC" >> "$GITHUB_ENV"
+          echo "VN=$VN" >> "$GITHUB_ENV"
+          echo "VC=$VC" >> "$GITHUB_OUTPUT"
+          echo "VN=$VN" >> "$GITHUB_OUTPUT"
+          echo "本次版本：$VN (versionCode=$VC)"
+
+      # 从 Secrets 还原固定签名密钥（不进仓库），现场写 keystore.properties 供 Gradle 读取。
+      # 未配置 Secrets 时不报错：改出未签名包（preview），由本地 apksigner 补签。
+      - name: Detect signing secrets
+        env:
+          KS: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KS" ]; then
+            echo "HAS_KS=true" >> "$GITHUB_ENV"
+          else
+            echo "HAS_KS=false" >> "$GITHUB_ENV"
+            echo "::warning::未配置签名 Secrets，本次产出的 APK 未签名"
+          fi
+
+      - name: Restore signing keystore
+        if: env.HAS_KS == 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          set -e
+          mkdir -p keystore
+          echo "$KEYSTORE_BASE64" | base64 -d > keystore/todolist-release.jks
+          cat > keystore.properties <<EOF
+          storeFile=keystore/todolist-release.jks
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          EOF
+          echo "keystore 已就位：$(stat -c%s keystore/todolist-release.jks) 字节"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build release APK
+        run: gradle :app:assembleRelease --no-daemon --stacktrace -PappVersionCode=${{ steps.ver.outputs.VC }} -PappVersionName=${{ steps.ver.outputs.VN }}
+
+      # 校验签名与版本号，避免出现「未签名包被当正式包发出去」
+      - name: Verify signature
+        if: env.HAS_KS == 'true'
+        run: |
+          set -e
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          APKSIGNER="$SDK/build-tools/34.0.0/apksigner"
+          APK="app/build/outputs/apk/release/app-release.apk"
+          "$APKSIGNER" verify --print-certs "$APK"
+          echo "--- 版本 ---"
+          "$SDK/build-tools/34.0.0/aapt" dump badging "$APK" | head -1
+          echo "--- 包内网页资源 ---"
+          unzip -l "$APK" | grep 'assets/www' || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: todolist-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+      # 正式签名版：资产名固定为 todolist-latest.apk，
+      # 于是 releases/latest/download/todolist-latest.apk 永远指向最新版，链接不变。
+      - name: Publish signed release
+        if: env.HAS_KS == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.VN }}
+          name: TodoList v${{ steps.ver.outputs.VN }}
+          prerelease: false
+          files: android/app/build/outputs/apk/release/app-release.apk#todolist-latest.apk
+          body: |
+            TodoList 待办清单 v${{ steps.ver.outputs.VN }}（versionCode ${{ steps.ver.outputs.VC }}）
+
+            固定下载地址（手机浏览器打开即下）：
+            https://github.com/chenziangloves/todolist/releases/latest/download/todolist-latest.apk
+
+            直接覆盖安装即可，任务数据不会丢失；装完在「设置 → 检查更新」能看到版本号变化。
+
+      # 未签名产物只做预览，标记为 prerelease，避免它抢走 releases/latest
+      - name: Publish unsigned preview
+        if: env.HAS_KS != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: unsigned-${{ github.run_number }}
+          name: TodoList v${{ steps.ver.outputs.VN }}（未签名预览 build ${{ github.run_number }}）
+          prerelease: true
+          files: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          body: |
+            未签名的构建产物，仅用于本地补签，不能直接安装。
+            配置好签名 Secrets 后，工作流会自动改为发布已签名版本。

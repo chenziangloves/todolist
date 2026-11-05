@@ -1,0 +1,29 @@
+# 依赖与构建产物
+.cache/
+.tmp/
+*.apk
+*.zip
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/keystore/
+
+# 密钥与签名配置：绝对不能进仓库
+secrets/
+android/keystore.properties
+*.jks
+*.keystore
+
+__pycache__/
+*.pyc
+.DS_Store
+
+# 开发期临时文件（截图、临时请求体之类）。
+# 注意：工作台的存快照会 git add -A，这条规则是防止它们被顺手提交进去。
+_*
+!/.gitignore
+
+# 测试依赖（npm install 装回来即可）
+tests/node_modules/
+tests/package-lock.json

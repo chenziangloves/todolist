@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0f1115">
+<title>TodoList</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="app">
+
+  <header class="head">
+    <div class="head-row">
+      <div class="head-date" id="head-date">—</div>
+      <button class="icon-btn" id="btn-menu" aria-label="更多">
+        <svg viewBox="0 0 24 24" width="20" height="20"><circle cx="5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="19" cy="12" r="1.9"/></svg>
+      </button>
+    </div>
+    <h1 class="head-title" id="head-title">待办</h1>
+    <div class="head-sum" id="head-sum">还没有任务</div>
+
+    <div class="tabs">
+      <button class="tab on" data-view="active">待办<span class="tab-n" id="n-active">0</span></button>
+      <button class="tab" data-view="done">已完成<span class="tab-n" id="n-done">0</span></button>
+    </div>
+  </header>
+
+  <main class="list" id="list"></main>
+
+  <div class="hint" id="hint"></div>
+
+  <button class="fab" id="fab" aria-label="新任务">
+    <svg viewBox="0 0 24 24" width="26" height="26"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+
+  <!-- 新建 / 编辑 -->
+  <div class="mask" id="sheet-mask">
+    <div class="sheet" id="sheet">
+      <div class="sheet-bar"></div>
+      <div class="sheet-head">
+        <h2 id="sh-title">新任务</h2>
+        <button class="text-btn" id="sh-cancel">取消</button>
+      </div>
+
+      <div class="field">
+        <input id="f-title" class="input-title" type="text" placeholder="要做什么？" maxlength="120" autocomplete="off">
+      </div>
+
+      <div class="field">
+        <textarea id="f-note" class="input-note" rows="2" placeholder="备注（可选）" maxlength="500"></textarea>
+      </div>
+
+      <div class="field">
+        <label class="label">优先级</label>
+        <div class="seg" id="f-priority">
+          <button data-p="2" class="seg-i">高</button>
+          <button data-p="1" class="seg-i on">中</button>
+          <button data-p="0" class="seg-i">低</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="label" for="f-start">开始时间<span class="label-tip">留空表示随时都能做</span></label>
+        <input id="f-start" class="input-time" type="datetime-local">
+      </div>
+
+      <div class="field">
+        <label class="label" for="f-due">截止时间</label>
+        <input id="f-due" class="input-time" type="datetime-local">
+      </div>
+
+      <div class="field">
+        <label class="label">提前提醒</label>
+        <div class="seg seg-wrap" id="f-remind">
+          <button data-d="0" class="seg-i">当天</button>
+          <button data-d="1" class="seg-i on">1 天</button>
+          <button data-d="2" class="seg-i">2 天</button>
+          <button data-d="3" class="seg-i">3 天</button>
+          <button data-d="7" class="seg-i">7 天</button>
+          <button data-d="-1" class="seg-i">不提醒</button>
+        </div>
+      </div>
+
+      <div class="sheet-actions">
+        <button class="btn-ghost" id="sh-del">删除</button>
+        <button class="btn-primary" id="sh-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 更多 -->
+  <div class="mask" id="menu-mask">
+    <div class="sheet sheet-menu" id="menu">
+      <div class="sheet-bar"></div>
+      <button class="menu-i" id="m-notif">通知权限<span id="m-notif-v" class="menu-v">—</span></button>
+      <button class="menu-i" id="m-unpin">全部恢复按截止时间排序</button>
+      <button class="menu-i" id="m-export">导出备份（存到下载目录）</button>
+      <button class="menu-i" id="m-check">检查更新<span id="m-ver" class="menu-v">—</span></button>
+      <button class="menu-i menu-close" id="m-close">关闭</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/native.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
